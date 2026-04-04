@@ -50,6 +50,7 @@ const session = Session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   store: MongoStore.create({
     mongoUrl: MONGOOSE_URI,
     collectionName: "sessions",

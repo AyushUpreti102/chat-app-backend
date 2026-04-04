@@ -1,14 +1,13 @@
 const express = require("express");
+const isAuthenticated = require("../middleware/auth");
 const ChatController = require("../controllers/chat-controller");
+const router = express.Router();
 
 const controller = new ChatController();
 
-const router = express.Router();
+router.use(isAuthenticated);
 
-// (Optional) Get all conversations for a user
-router.get("/conversations/:userId", controller.getAllConversions);
-
-// Get chat history between two users
-router.get("/:userId/:otherUserId", controller.getChatHistory);
+router.get("/conversations", controller.getAllConversions);
+router.get("/history/:otherUserId", controller.getChatHistory);
 
 module.exports = router;

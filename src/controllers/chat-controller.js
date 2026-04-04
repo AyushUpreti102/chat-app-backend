@@ -2,7 +2,8 @@ const Chat = require("../models/chats-model");
 
 class ChatController {
   async getChatHistory(req, res) {
-    const { userId, otherUserId } = req.params;
+    const userId = req.session.userId;
+    const { otherUserId } = req.params;
 
     try {
       const messages = await Chat.find({
@@ -19,7 +20,7 @@ class ChatController {
   }
 
   async getAllConversions(req, res) {
-    const { userId } = req.params;
+    const userId = req.session.userId;
 
     try {
       const chats = await Chat.find({

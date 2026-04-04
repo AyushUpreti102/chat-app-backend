@@ -7,9 +7,9 @@ const router = express.Router();
 
 router.use(express.json());
 
-// Register Route
 router.post("/signup", controller.register);
-// Login Route
 router.post("/login", controller.login);
+router.get("/me", controller.me);
+router.post("/logout", controller.logout);
 
 module.exports = router;

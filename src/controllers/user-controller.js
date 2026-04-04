@@ -4,7 +4,7 @@ const Chat = require("../models/chats-model");
 class UserController {
   async getUserFriends(req, res) {
     try {
-      const { userId } = req.params;
+      const userId = req.session.userId;
 
       const user = await User.findById(userId).populate(
         "friends",
@@ -43,7 +43,8 @@ class UserController {
 
   async getSuggestions(req, res) {
     try {
-      const user = await User.findById(req.params.userId);
+      const userId = req.session.userId;
+      const user = await User.findById(userId);
 
       const suggestions = await User.find({
         _id: {
@@ -60,7 +61,8 @@ class UserController {
 
   async addFriend(req, res) {
     try {
-      const { userId, friendId } = req.params;
+      const userId = req.session.userId;
+      const { friendId } = req.params;
 
       const user = await User.findById(userId);
       const friend = await User.findById(friendId);
@@ -83,7 +85,8 @@ class UserController {
 
   async removeFriend(req, res) {
     try {
-      const { userId, friendId } = req.params;
+      const userId = req.session.userId;
+      const { friendId } = req.params;
 
       await User.findByIdAndUpdate(userId, {
         $pull: { friends: friendId },

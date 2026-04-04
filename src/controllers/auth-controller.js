@@ -93,8 +93,8 @@ class AuthController {
       // Clear cookie in browser
       res.clearCookie("sid", {
         httpOnly: true,
-        secure: process.env.ENV === "PROD", // true in production (HTTPS)
-        sameSite: "lax",
+        secure: process.env.NODE_ENV === "PROD",
+        sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
       });
 
       return res.json({ message: "Logged out successfully" });

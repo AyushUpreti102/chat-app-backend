@@ -56,9 +56,9 @@ const session = Session({
   }),
   cookie: {
     httpOnly: true,
-    secure: process.env.ENV === "PROD", // true in production
+    secure: process.env.NODE_ENV === "PROD",
+    sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
     maxAge: 1000 * 60 * 60,
-    sameSite: "lax",
   },
 });
 

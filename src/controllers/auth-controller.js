@@ -66,15 +66,36 @@ class AuthController {
     }
   }
 
-  me(req, res) {
-    if (!req.session.userId) {
-      return res.status(401).json({ isAuth: false });
-    }
+  async me(req, res) {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ isAuth: false });
+      }
 
-    res.json({
-      isAuth: true,
-      userId: req.session.userId,
-    });
+      const user = await User.findById(req.session.userId).select(
+        "_id username email profilePic bio",
+      );
+
+      if (!user) {
+        return res
+          .status(404)
+          .json({ isAuth: false, message: "User not found" });
+      }
+
+      res.json({
+        isAuth: true,
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          profilePic: user.profilePic,
+          bio: user.bio,
+        },
+      });
+    } catch (err) {
+      console.error("Me API error:", err);
+      res.status(500).json({ message: "Server error" });
+    }
   }
 
   logout(req, res) {

@@ -16,6 +16,8 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGOOSE_URI;
+const isProduction =
+  process.env.NODE_ENV === "production" || process.env.ENV === "PROD";
 
 /* ================= DB CONNECTION ================= */
 
@@ -34,6 +36,9 @@ const connectDB = async () => {
 connectDB();
 
 /* ================= MIDDLEWARE ================= */
+
+// Required in Render/any reverse-proxy setup so secure session cookies are set.
+app.set("trust proxy", 1);
 
 app.use(express.json());
 
@@ -57,6 +62,7 @@ app.use(
 const sessionMiddleware = session({
   name: "sid",
   secret: process.env.SESSION_SECRET,
+  proxy: isProduction,
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({
@@ -65,8 +71,8 @@ const sessionMiddleware = session({
   }),
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     maxAge: 1000 * 60 * 60,
   },
 });

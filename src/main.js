@@ -16,8 +16,7 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGOOSE_URI;
-const isProduction =
-  process.env.NODE_ENV === "production" || process.env.ENV === "PROD";
+const isProduction = process.env.NODE_ENV === "PROD";
 
 /* ================= DB CONNECTION ================= */
 
@@ -62,7 +61,7 @@ app.use(
 const sessionMiddleware = session({
   name: "sid",
   secret: process.env.SESSION_SECRET,
-  proxy: isProduction,
+  proxy: true,
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({

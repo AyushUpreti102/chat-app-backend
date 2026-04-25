@@ -12,9 +12,6 @@ const router = express.Router();
 router.use(isAuthenticated);
 
 // Register Route
-router.get("/friends", controller.getUserFriends);
-router.get("/suggestions", controller.getSuggestions);
-router.post("/add-friend/:friendId", controller.addFriend);
-router.delete("/remove-friend/:friendId", controller.removeFriend);
+router.get("/getChatList", controller.getChatList);
 
 module.exports = router;

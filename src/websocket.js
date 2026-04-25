@@ -1,53 +1,206 @@
 const { WebSocketServer } = require("ws");
-const { parse } = require("url");
 const ChatController = require("./controllers/chat-controller");
+const Conversation = require("./models/conversation-model");
 
-const initWebsocket = (server) => {
-  // Create WebSocket server
-  const clients = new Map();
+const userSockets = new Map();
+
+const isOnline = (userId) => {
+  return userSockets.has(userId) && userSockets.get(userId).size > 0;
+};
+
+const initWebsocket = (server, sessionMiddleware) => {
   const wss = new WebSocketServer({ server });
   const controller = new ChatController();
 
-  const sendMessage = (userId, data) => {
-    const msg = JSON.parse(data);
+  /* ================= HELPERS ================= */
 
-    controller.saveMessageToDb(userId, msg);
-
-    // Broadcast message to the specific client
-    const targetWs = clients.get(msg.to);
-
-    if (targetWs && targetWs.readyState === WebSocket.OPEN) {
-      targetWs.send(
-        JSON.stringify({
-          from: userId,
-          text: msg.text,
-        })
-      );
+  const send = (ws, payload) => {
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify(payload));
     }
   };
 
-  wss.on("connection", (ws, req) => {
-    const { query } = parse(req.url, true);
-    const userId = query.userId;
+  const sendToUser = (userId, payload) => {
+    const sockets = userSockets.get(userId);
+    if (!sockets) return;
 
-    if (!userId) {
-      ws.close();
-      return;
+    sockets.forEach((ws) => send(ws, payload));
+  };
+
+  const broadcast = async (payload, userId) => {
+    const conversations = await Conversation.find({
+      participants: userId,
+    }).select("participants");
+
+    const friendIds = new Set();
+
+    conversations.forEach((conv) => {
+      conv.participants.forEach((p) => {
+        if (p.toString() !== userId.toString()) {
+          friendIds.add(p.toString());
+        }
+      });
+    });
+
+    // send only to friends
+    friendIds.forEach((fid) => {
+      const sockets = userSockets.get(fid);
+      if (!sockets) return;
+
+      sockets.forEach((ws) => send(ws, payload));
+    });
+  };
+
+  const addSocket = (userId, ws) => {
+    if (!userSockets.has(userId)) {
+      userSockets.set(userId, new Set());
     }
 
-    console.log("🔗 Client connected with user Id", userId);
+    userSockets.get(userId).add(ws);
+  };
 
-    clients.set(userId, ws);
+  const removeSocket = (userId, ws) => {
+    const sockets = userSockets.get(userId);
+    if (!sockets) return false;
 
-    ws.on("message", (data) => sendMessage(userId, data));
+    sockets.delete(ws);
 
-    ws.on("close", () => {
-      clients.delete(userId);
-      console.log("❌ Client disconnected");
+    if (sockets.size === 0) {
+      userSockets.delete(userId);
+      return true; // fully offline
+    }
+
+    return false;
+  };
+
+  /* ================= EVENTS ================= */
+
+  const handleEvent = async (userId, raw) => {
+    try {
+      const event = JSON.parse(raw.toString());
+
+      switch (event.type) {
+        case "message": {
+          const { to, text } = event.data || {};
+
+          if (!to || !text?.trim()) return;
+
+          const saved = await controller.saveMessage(userId, {
+            receiverId: to,
+            text: text.trim(),
+          });
+
+          const payload = {
+            type: "message",
+            data: saved,
+          };
+
+          sendToUser(to.toString(), payload);
+          sendToUser(userId.toString(), payload);
+          break;
+        }
+
+        case "typing": {
+          const { to } = event.data || {};
+          if (!to) return;
+
+          sendToUser(to.toString(), {
+            type: "typing",
+            data: { from: userId },
+          });
+
+          break;
+        }
+
+        case "ping": {
+          sendToUser(userId, { type: "pong" });
+          break;
+        }
+      }
+    } catch (err) {
+      console.error("WS Event Error:", err.message);
+    }
+  };
+
+  /* ================= CONNECTION ================= */
+
+  wss.on("connection", (ws, req) => {
+    sessionMiddleware(req, {}, () => {
+      const userId = req.session?.userId?.toString();
+
+      if (!userId) {
+        ws.close();
+        return;
+      }
+
+      const wasOffline = !isOnline(userId);
+
+      addSocket(userId, ws);
+
+      console.log("Connected:", userId);
+
+      if (wasOffline) {
+        broadcast(
+          {
+            type: "online",
+            data: {
+              userId,
+              isOnline: true,
+            },
+          },
+          userId,
+        );
+      }
+
+      ws.isAlive = true;
+
+      ws.on("pong", () => {
+        ws.isAlive = true;
+      });
+
+      ws.on("message", (msg) => {
+        handleEvent(userId, msg);
+      });
+
+      ws.on("close", () => {
+        const fullyOffline = removeSocket(userId, ws);
+
+        console.log("Disconnected:", userId);
+
+        if (fullyOffline) {
+          broadcast(
+            {
+              type: "online",
+              data: {
+                userId,
+                isOnline: false,
+              },
+            },
+            userId,
+          );
+        }
+      });
     });
   });
+
+  /* ================= SERVER HEARTBEAT ================= */
+
+  const interval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws.isAlive === false) {
+        return ws.terminate();
+      }
+
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
+
+  wss.on("close", () => clearInterval(interval));
 };
 
 module.exports = {
   initWebsocket,
+  userSockets,
+  isOnline,
 };

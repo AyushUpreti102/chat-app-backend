@@ -1,96 +1,143 @@
 const User = require("../models/users-model");
 const bcrypt = require("bcryptjs");
-const dotenv = require("dotenv");
-
-dotenv.config();
 
 class AuthController {
-  async register(req, res) {
-    const { username, email, password } = req.body;
+  /* ================= REGISTER ================= */
 
+  async register(req, res) {
     try {
-      let user = await User.findOne({ email });
-      if (user) {
-        res.status(400).json({ message: "User already exists" });
-        return;
+      let { username, email, password } = req.body;
+
+      // 🔥 validation
+      if (!username || !email || !password) {
+        return res.status(400).json({ message: "All fields are required" });
       }
 
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
+      username = username.trim();
+      email = email.toLowerCase().trim();
 
-      user = new User({ username, email, password: hashedPassword });
-      await user.save();
+      if (password.length < 6) {
+        return res
+          .status(400)
+          .json({ message: "Password must be at least 6 characters" });
+      }
 
-      res.json({ message: "User registered successfully" });
+      // 🔥 check existing user (email OR username)
+      const existingUser = await User.findOne({
+        $or: [{ email }, { username }],
+      });
+
+      if (existingUser) {
+        return res.status(400).json({
+          message:
+            existingUser.email === email
+              ? "Email already in use"
+              : "Username already taken",
+        });
+      }
+
+      // 🔥 hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const user = await User.create({
+        username,
+        email,
+        password: hashedPassword,
+      });
+
+      res.status(201).json({
+        message: "User registered successfully",
+      });
     } catch (err) {
-      res.status(500).json({ message: err.message });
+      console.error("Register error:", err);
+      res.status(500).json({ message: "Server error" });
     }
   }
 
+  /* ================= LOGIN ================= */
+
   async login(req, res) {
-    const { usernameOREmail, password } = req.body;
-
     try {
+      let { usernameOREmail, password } = req.body;
+
+      if (!usernameOREmail || !password) {
+        return res.status(400).json({ message: "All fields are required" });
+      }
+
+      usernameOREmail = usernameOREmail.trim();
+
+      // 🔥 find user
       const user = await User.findOne({
-        $or: [{ email: usernameOREmail }, { username: usernameOREmail }],
-      });
+        $or: [
+          { email: usernameOREmail.toLowerCase() },
+          { username: usernameOREmail },
+        ],
+      }).select("+password");
+
       if (!user) {
-        res.status(400).json({ message: "Invalid credentials" });
-        return;
+        return res.status(400).json({ message: "Invalid credentials" });
       }
 
+      // 🔥 compare password
       const isMatch = await bcrypt.compare(password, user.password);
+
       if (!isMatch) {
-        res.status(400).json({ message: "Invalid credentials" });
-        return;
+        return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      req.session.userId = user._id;
-
-      req.session.save((err) => {
+      // 🔥 prevent session fixation
+      req.session.regenerate((err) => {
         if (err) {
-          console.error("Session save error:", err);
+          console.error("Session regenerate error:", err);
           return res.status(500).json({ message: "Login failed" });
         }
 
-        res.json({
-          user: {
-            id: user._id,
-            username: user.username,
-            email: user.email,
-          },
+        req.session.userId = user._id;
+
+        req.session.save((err) => {
+          if (err) {
+            console.error("Session save error:", err);
+            return res.status(500).json({ message: "Login failed" });
+          }
+
+          res.json({
+            user: {
+              _id: user._id,
+              username: user.username,
+              email: user.email,
+              profilePic: user.profilePic || "",
+            },
+          });
         });
       });
     } catch (err) {
-      res.status(500).json({ message: err.message });
+      console.error("Login error:", err);
+      res.status(500).json({ message: "Server error" });
     }
   }
 
+  /* ================= ME ================= */
+
   async me(req, res) {
     try {
-      if (!req.session.userId) {
+      if (!req.session?.userId) {
         return res.status(401).json({ isAuth: false });
       }
 
       const user = await User.findById(req.session.userId).select(
-        "_id username email profilePic bio",
+        "_id username email profilePic",
       );
 
       if (!user) {
-        return res
-          .status(404)
-          .json({ isAuth: false, message: "User not found" });
+        return res.status(404).json({
+          isAuth: false,
+          message: "User not found",
+        });
       }
 
       res.json({
         isAuth: true,
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          profilePic: user.profilePic,
-          bio: user.bio,
-        },
+        user,
       });
     } catch (err) {
       console.error("Me API error:", err);
@@ -98,27 +145,26 @@ class AuthController {
     }
   }
 
+  /* ================= LOGOUT ================= */
+
   logout(req, res) {
-    // If no session exists
     if (!req.session) {
-      return res.status(200).json({ message: "Already logged out" });
+      return res.json({ message: "Already logged out" });
     }
 
-    // Destroy session in store (Mongo)
     req.session.destroy((err) => {
       if (err) {
-        console.error("Session destroy error:", err);
+        console.error("Logout error:", err);
         return res.status(500).json({ message: "Logout failed" });
       }
 
-      // Clear cookie in browser
       res.clearCookie("sid", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "PROD",
-        sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       });
 
-      return res.json({ message: "Logged out successfully" });
+      res.json({ message: "Logged out successfully" });
     });
   }
 }

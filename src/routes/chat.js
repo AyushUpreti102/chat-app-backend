@@ -7,7 +7,7 @@ const controller = new ChatController();
 
 router.use(isAuthenticated);
 
-router.get("/conversations", controller.getAllConversions);
-router.get("/history/:otherUserId", controller.getChatHistory);
+router.get("/messages/:conversationId", controller.getMessages);
+router.post("/read", controller.markAsRead);
 
 module.exports = router;

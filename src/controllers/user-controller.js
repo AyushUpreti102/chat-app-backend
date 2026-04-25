@@ -1,104 +1,43 @@
-const User = require("../models/users-model");
-const Chat = require("../models/chats-model");
+const Conversation = require("../models/conversation-model");
+const { userSockets, isOnline } = require("../websocket");
 
 class UserController {
-  async getUserFriends(req, res) {
+  async getChatList(req, res) {
     try {
       const userId = req.session.userId;
+      const userIdKey = userId.toString();
 
-      const user = await User.findById(userId).populate(
-        "friends",
-        "username email",
-      );
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const conversations = await Conversation.find({
+        participants: userId,
+      })
+        .populate("participants", "username email profilePic")
+        .sort({ updatedAt: -1 })
+        .lean();
 
-      // Build response with last message for each friend
-      const contactsWithLastMessage = await Promise.all(
-        user.friends.map(async (friend) => {
-          const lastMsg = await Chat.findOne({
-            $or: [
-              { from: userId, to: friend._id },
-              { from: friend._id, to: userId },
-            ],
-          })
-            .sort({ createdAt: -1 })
-            .limit(1);
+      const result = conversations.map((conv) => {
+        const otherUser = conv.participants.find(
+          (p) => p._id.toString() !== userIdKey,
+        );
 
-          return {
-            _id: friend._id,
-            username: friend.username,
-            email: friend.email,
-            lastMessage: lastMsg ? lastMsg.text : null,
-            lastMessageTime: lastMsg ? lastMsg.createdAt : null,
-          };
-        }),
-      );
+        const unreadCount =
+          conv.unreadCount instanceof Map
+            ? conv.unreadCount.get(userIdKey) || 0
+            : conv.unreadCount?.[userIdKey] || 0;
 
-      res.json({ friends: contactsWithLastMessage });
+        return {
+          conversationId: conv._id,
+          user: otherUser,
+          isOnline: isOnline(otherUser._id.toString()),
+          lastMessage: conv.lastMessage?.text || "",
+          lastMessageTime: conv.lastMessage?.createdAt || null,
+          unreadCount,
+        };
+      });
+
+      res.json(result);
     } catch (error) {
-      console.error(error);
+      console.error("CHAT LIST ERROR:", error);
       res.status(500).json({ message: "Server error" });
-    }
-  }
-
-  async getSuggestions(req, res) {
-    try {
-      const userId = req.session.userId;
-      const user = await User.findById(userId);
-
-      const suggestions = await User.find({
-        _id: {
-          $ne: user._id,
-          $nin: user.friends,
-        },
-      }).select("username email");
-
-      res.json({ suggestions });
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  }
-
-  async addFriend(req, res) {
-    try {
-      const userId = req.session.userId;
-      const { friendId } = req.params;
-
-      const user = await User.findById(userId);
-      const friend = await User.findById(friendId);
-
-      if (user.friends.includes(friendId)) {
-        return res.status(400).json({ message: "Already friends" });
-      }
-
-      user.friends.push(friendId);
-      friend.friends.push(userId);
-
-      await user.save();
-      await friend.save();
-
-      res.json({ message: "Friend added" });
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  }
-
-  async removeFriend(req, res) {
-    try {
-      const userId = req.session.userId;
-      const { friendId } = req.params;
-
-      await User.findByIdAndUpdate(userId, {
-        $pull: { friends: friendId },
-      });
-
-      await User.findByIdAndUpdate(friendId, {
-        $pull: { friends: userId },
-      });
-
-      res.json({ message: "Friend removed" });
-    } catch (err) {
-      res.status(500).json({ message: err.message });
     }
   }
 }

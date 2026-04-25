@@ -1,76 +1,96 @@
-const dotenv = require("dotenv");
+// main.js
+require("dotenv").config();
+
 const express = require("express");
 const mongoose = require("mongoose");
+const session = require("express-session");
 const { MongoStore } = require("connect-mongo");
-const Session = require("express-session");
-const routes = require("./routes");
 const cors = require("cors");
+const http = require("http");
+
+const routes = require("./routes");
 const { initWebsocket } = require("./websocket");
 
-dotenv.config();
-
 const app = express();
-const PORT = 3000;
-const MONGOOSE_URI = process.env.MONGOOSE_URI;
+const server = http.createServer(app);
 
-mongoose.connect(MONGOOSE_URI);
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGOOSE_URI;
 
-// MongoDB connection event listeners
-const db = mongoose.connection;
-db.on("error", console.error.bind(console, "MongoDB connection error:"));
-db.once("open", () => {
-  console.log("Connected to MongoDB");
-});
+/* ================= DB CONNECTION ================= */
 
-// Middleware
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGO_URI, {
+      maxPoolSize: 10,
+    });
+    console.log("✅ MongoDB Connected");
+  } catch (err) {
+    console.error("❌ DB Connection Failed:", err.message);
+    process.exit(1); // fail fast
+  }
+};
+
+connectDB();
+
+/* ================= MIDDLEWARE ================= */
+
 app.use(express.json());
 
-// Allowed origins
+// CORS (cleaner version)
 const allowedOrigins = [process.env.DEV_URL, process.env.PROD_URL].filter(
   Boolean,
 );
+
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      } else {
-        return callback(new Error("Not allowed by CORS"));
-      }
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      cb(new Error("Not allowed by CORS"));
     },
     credentials: true,
   }),
 );
 
-// Session
-const session = Session({
+/* ================= SESSION ================= */
+
+const sessionMiddleware = session({
   name: "sid",
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  proxy: true,
   store: MongoStore.create({
-    mongoUrl: MONGOOSE_URI,
+    mongoUrl: MONGO_URI,
     collectionName: "sessions",
   }),
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "PROD",
-    sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     maxAge: 1000 * 60 * 60,
   },
 });
 
-app.use(session);
+app.use(sessionMiddleware);
 
-// Routes
+/* ================= ROUTES ================= */
+
 app.use("/api", routes);
 
-// Create HTTP server
-const server = app.listen(PORT, () => {
-  console.log(`HTTP server running on http://localhost:${PORT}`);
+/* ================= SERVER ================= */
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
 
-initWebsocket(server);
+/* ================= WEBSOCKET ================= */
+
+initWebsocket(server, sessionMiddleware);
+
+/* ================= GRACEFUL SHUTDOWN ================= */
+
+process.on("SIGINT", async () => {
+  console.log("🛑 Shutting down...");
+  await mongoose.connection.close();
+  process.exit(0);
+});

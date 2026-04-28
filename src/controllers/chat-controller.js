@@ -1,6 +1,5 @@
 const Conversation = require("../models/conversation-model");
 const Message = require("../models/message-model");
-const mongoose = require("mongoose");
 
 class ChatController {
   async getMessages(req, res) {
@@ -49,10 +48,8 @@ class ChatController {
     }
   }
 
-  async saveMessage(userId, { receiverId, text }) {
+  async saveMessage(userId, { receiverId, text, files = [] }) {
     try {
-      // Use findOneAndUpdate with upsert to prevent race conditions
-      // and reduce database round-trips.
       let conversation = await Conversation.findOneAndUpdate(
         { participants: { $all: [userId, receiverId] } },
         {
@@ -69,8 +66,21 @@ class ChatController {
         conversationId: conversation._id,
         sender: userId,
         receiver: receiverId,
-        text,
+        text: text || "",
+        files: files || [], // ✅ array
       });
+
+      // 👇 Smart last message preview
+      let lastMessageText = "";
+
+      if (text) {
+        lastMessageText = text;
+      } else if (files?.length) {
+        lastMessageText =
+          files.length === 1
+            ? "📎 Attachment"
+            : `📎 ${files.length} attachments`;
+      }
 
       await Conversation.updateOne(
         { _id: conversation._id },
@@ -78,7 +88,7 @@ class ChatController {
           $set: {
             updatedAt: new Date(),
             lastMessage: {
-              text,
+              text: lastMessageText,
               sender: userId,
               createdAt: new Date(),
             },
@@ -89,7 +99,7 @@ class ChatController {
         },
       );
 
-      return message;
+      return message.toObject(); // ✅ no type
     } catch (err) {
       console.error(err);
       throw err;

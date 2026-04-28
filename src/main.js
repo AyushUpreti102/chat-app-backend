@@ -81,6 +81,7 @@ app.use(sessionMiddleware);
 /* ================= ROUTES ================= */
 
 app.use("/api", routes);
+app.use("/uploads", express.static("uploads"));
 
 /* ================= SERVER ================= */
 

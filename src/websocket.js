@@ -81,13 +81,19 @@ const initWebsocket = (server, sessionMiddleware) => {
 
       switch (event.type) {
         case "message": {
-          const { to, text } = event.data || {};
+          const { to, text, files } = event.data || {};
 
-          if (!to || !text?.trim()) return;
+          if (!to) return;
+
+          const cleanText = text?.trim() || "";
+          const hasFiles = Array.isArray(files) && files.length > 0;
+
+          if (!cleanText && !hasFiles) return;
 
           const saved = await controller.saveMessage(userId, {
             receiverId: to,
-            text: text.trim(),
+            text: cleanText,
+            files,
           });
 
           const payload = {
@@ -97,6 +103,7 @@ const initWebsocket = (server, sessionMiddleware) => {
 
           sendToUser(to.toString(), payload);
           sendToUser(userId.toString(), payload);
+
           break;
         }
 

@@ -25,9 +25,16 @@ const messageSchema = new mongoose.Schema(
 
     text: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
     },
+
+    files: [
+      {
+        fileUrl: String,
+        fileName: String,
+      },
+    ],
 
     seen: {
       type: Boolean,
@@ -36,6 +43,18 @@ const messageSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+messageSchema.pre("validate", function (next) {
+  const hasText = typeof this.text === "string" && this.text.trim().length > 0;
+
+  const hasFiles = Array.isArray(this.files) && this.files.length > 0;
+
+  if (!hasText && !hasFiles) {
+    return next(new Error("Message must have text or file"));
+  }
+
+  next();
+});
 
 messageSchema.index({ conversationId: 1, createdAt: 1 });
 

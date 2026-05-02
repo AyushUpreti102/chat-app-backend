@@ -123,6 +123,60 @@ const initWebsocket = (server, sessionMiddleware) => {
           sendToUser(userId, { type: "pong" });
           break;
         }
+
+        case "call-offer": {
+          const { to, offer, isVideo } = event.data || {};
+          if (!to || !offer) return;
+
+          sendToUser(to.toString(), {
+            type: "call-offer",
+            data: {
+              from: userId,
+              offer,
+              isVideo,
+            },
+          });
+          break;
+        }
+
+        case "call-answer": {
+          const { to, answer } = event.data || {};
+          if (!to || !answer) return;
+
+          sendToUser(to.toString(), {
+            type: "call-answer",
+            data: {
+              from: userId,
+              answer,
+            },
+          });
+          break;
+        }
+
+        case "ice-candidate": {
+          const { to, candidate } = event.data || {};
+          if (!to || !candidate) return;
+
+          sendToUser(to.toString(), {
+            type: "ice-candidate",
+            data: {
+              from: userId,
+              candidate,
+            },
+          });
+          break;
+        }
+
+        case "call-end": {
+          const { to } = event.data || {};
+          if (!to) return;
+
+          sendToUser(to.toString(), {
+            type: "call-end",
+            data: { from: userId },
+          });
+          break;
+        }
       }
     } catch (err) {
       console.error("WS Event Error:", err.message);

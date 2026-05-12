@@ -11,7 +11,8 @@ const router = express.Router();
 
 router.use(isAuthenticated);
 
-// Register Route
+router.get("/search", controller.searchUsers);
+router.post("/startConversation", controller.startConversationWithUser);
 router.get("/getChatList", controller.getChatList);
 
 module.exports = router;

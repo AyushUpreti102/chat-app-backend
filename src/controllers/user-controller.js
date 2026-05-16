@@ -42,6 +42,10 @@ class UserController {
       const userId = req.session.userId;
       const { peerId } = req.body;
 
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(401).json({ message: "Invalid session" });
+      }
+
       if (!peerId) {
         return res.status(400).json({ message: "peerId is required" });
       }
@@ -50,9 +54,10 @@ class UserController {
         return res.status(400).json({ message: "Invalid peerId" });
       }
 
+      const userObjectId = new mongoose.Types.ObjectId(userId);
       const peerObjectId = new mongoose.Types.ObjectId(peerId);
 
-      if (peerObjectId.equals(userId)) {
+      if (peerObjectId.equals(userObjectId)) {
         return res.status(400).json({ message: "Cannot start a conversation with yourself" });
       }
 
@@ -64,20 +69,23 @@ class UserController {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const userIdStr = userId.toString();
+      const userIdStr = userObjectId.toString();
       const peerIdStr = peerObjectId.toString();
 
-      const conversation = await Conversation.findOneAndUpdate(
-        { participants: { $all: [userId, peerObjectId] } },
-        {
-          $setOnInsert: {
-            participants: [userId, peerObjectId],
-            [`unreadCount.${userIdStr}`]: 0,
-            [`unreadCount.${peerIdStr}`]: 0,
+      let conversation = await Conversation.findOne({
+        participants: { $all: [userObjectId, peerObjectId], $size: 2 },
+      }).lean();
+
+      if (!conversation) {
+        conversation = await Conversation.create({
+          participants: [userObjectId, peerObjectId],
+          unreadCount: {
+            [userIdStr]: 0,
+            [peerIdStr]: 0,
           },
-        },
-        { new: true, upsert: true },
-      ).lean();
+        });
+        conversation = conversation.toObject();
+      }
 
       res.json({
         conversationId: conversation._id,
@@ -101,25 +109,29 @@ class UserController {
         .sort({ updatedAt: -1 })
         .lean();
 
-      const result = conversations.map((conv) => {
+      const result = conversations.reduce((list, conv) => {
         const otherUser = conv.participants.find(
-          (p) => p._id.toString() !== userIdKey,
+          (p) => p && p._id.toString() !== userIdKey,
         );
+
+        if (!otherUser) return list;
 
         const unreadCount =
           conv.unreadCount instanceof Map
             ? conv.unreadCount.get(userIdKey) || 0
             : conv.unreadCount?.[userIdKey] || 0;
 
-        return {
+        list.push({
           conversationId: conv._id,
           user: otherUser,
           isOnline: isOnline(otherUser._id.toString()),
           lastMessage: conv.lastMessage?.text || "",
           lastMessageTime: conv.lastMessage?.createdAt || null,
           unreadCount,
-        };
-      });
+        });
+
+        return list;
+      }, []);
 
       res.json(result);
     } catch (error) {

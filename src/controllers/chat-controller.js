@@ -1,5 +1,27 @@
 const Conversation = require("../models/conversation-model");
 const Message = require("../models/message-model");
+const mongoose = require("mongoose");
+
+async function findOrCreateConversation(userId, receiverId) {
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const receiverObjectId = new mongoose.Types.ObjectId(receiverId);
+  const userIdStr = userObjectId.toString();
+  const receiverIdStr = receiverObjectId.toString();
+
+  let conversation = await Conversation.findOne({
+    participants: { $all: [userObjectId, receiverObjectId], $size: 2 },
+  });
+
+  if (conversation) return conversation;
+
+  return Conversation.create({
+    participants: [userObjectId, receiverObjectId],
+    unreadCount: {
+      [userIdStr]: 0,
+      [receiverIdStr]: 0,
+    },
+  });
+}
 
 class ChatController {
   async getMessages(req, res) {
@@ -50,17 +72,7 @@ class ChatController {
 
   async saveMessage(userId, { receiverId, text, files = [] }) {
     try {
-      let conversation = await Conversation.findOneAndUpdate(
-        { participants: { $all: [userId, receiverId] } },
-        {
-          $setOnInsert: {
-            participants: [userId, receiverId],
-            [`unreadCount.${userId}`]: 0,
-            [`unreadCount.${receiverId}`]: 0,
-          },
-        },
-        { new: true, upsert: true },
-      );
+      const conversation = await findOrCreateConversation(userId, receiverId);
 
       const message = await Message.create({
         conversationId: conversation._id,

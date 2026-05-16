@@ -42,7 +42,7 @@ app.set("trust proxy", 1);
 app.use(express.json());
 
 // CORS (cleaner version)
-const allowedOrigins = [process.env.DEV_URL, process.env.PROD_URL].filter(
+const allowedOrigins = ["http://localhost:8080", process.env.PROD_URL].filter(
   Boolean,
 );
 
